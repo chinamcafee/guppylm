@@ -19,33 +19,39 @@ class GuppyInference:
         import os
         ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
 
-        # Detect format: legacy checkpoint has "model_state_dict" key,
-        # HF standard is just the state_dict (first key is a weight like "tok_emb.weight")
-        is_legacy = isinstance(ckpt, dict) and "model_state_dict" in ckpt
+        # Load config.json from same directory as the model file
+        config_dir = os.path.dirname(os.path.abspath(checkpoint_path))
+        config_path = os.path.join(config_dir, "config.json")
 
-        if is_legacy:
-            valid_fields = {f.name for f in GuppyConfig.__dataclass_fields__.values()}
-            self.config = GuppyConfig(**{k: v for k, v in ckpt["config"].items() if k in valid_fields})
+        # Extract state_dict — handle both legacy and standard formats
+        if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
             state_dict = ckpt["model_state_dict"]
         else:
-            # HF standard: load config from config.json next to the model file
-            config_dir = os.path.dirname(os.path.abspath(checkpoint_path))
-            config_path = os.path.join(config_dir, "config.json")
+            state_dict = ckpt
+
+        # Load config — try config.json first, fall back to embedded config
+        if os.path.exists(config_path):
             with open(config_path) as f:
                 cfg = json.load(f)
+            # Support both HF standard keys and our own keys
             self.config = GuppyConfig(
-                vocab_size=cfg["vocab_size"],
-                max_seq_len=cfg.get("max_position_embeddings", 128),
-                d_model=cfg["hidden_size"],
-                n_layers=cfg["num_hidden_layers"],
-                n_heads=cfg["num_attention_heads"],
-                ffn_hidden=cfg["intermediate_size"],
-                dropout=cfg.get("hidden_dropout_prob", 0.1),
-                pad_id=cfg.get("pad_token_id", 0),
-                bos_id=cfg.get("bos_token_id", 1),
-                eos_id=cfg.get("eos_token_id", 2),
+                vocab_size=cfg.get("vocab_size", 4096),
+                max_seq_len=cfg.get("max_position_embeddings", cfg.get("max_seq_len", 128)),
+                d_model=cfg.get("hidden_size", cfg.get("d_model", 384)),
+                n_layers=cfg.get("num_hidden_layers", cfg.get("n_layers", 6)),
+                n_heads=cfg.get("num_attention_heads", cfg.get("n_heads", 6)),
+                ffn_hidden=cfg.get("intermediate_size", cfg.get("ffn_hidden", 768)),
+                dropout=cfg.get("hidden_dropout_prob", cfg.get("dropout", 0.1)),
+                pad_id=cfg.get("pad_token_id", cfg.get("pad_id", 0)),
+                bos_id=cfg.get("bos_token_id", cfg.get("bos_id", 1)),
+                eos_id=cfg.get("eos_token_id", cfg.get("eos_id", 2)),
             )
-            state_dict = ckpt
+        elif isinstance(ckpt, dict) and "config" in ckpt:
+            valid_fields = {f.name for f in GuppyConfig.__dataclass_fields__.values()}
+            self.config = GuppyConfig(**{k: v for k, v in ckpt["config"].items() if k in valid_fields})
+        else:
+            print("Warning: No config found, using defaults")
+            self.config = GuppyConfig()
 
         self.model = GuppyLM(self.config).to(self.device)
         filtered = {k: v for k, v in state_dict.items() if k in self.model.state_dict()}
