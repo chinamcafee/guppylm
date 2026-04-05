@@ -397,119 +397,51 @@ def build_use():
     cells.append(md(
         "# GuppyLM — Chat with a Fish\n"
         "\n"
-        "Download the pre-trained GuppyLM model from HuggingFace and chat with it.\n"
-        "No training needed — just run all cells.\n"
+        "Download a pre-trained 9M parameter fish LLM and chat with it. Just run all cells.\n"
         "\n"
-        "**Model:** [arman-bd/guppylm-9M](https://huggingface.co/arman-bd/guppylm-9M) (8.7M params)"
+        "**Model:** [arman-bd/guppylm-9M](https://huggingface.co/arman-bd/guppylm-9M)"
     ))
 
-    # ── Setup ──────────────────────────────────────────────────────
-
-    cells.append(md("## 1. Setup"))
-
     cells.append(code(
+        "# Setup + Download\n"
         "!pip install -q torch tokenizers huggingface_hub\n"
-        "\n"
-        "import torch\n"
-        "print(f'PyTorch {torch.__version__}')\n"
-        "print(f'CUDA: {torch.cuda.is_available()}')"
-    ))
-
-    cells.append(code(
         "import os, shutil\n"
-        "if os.path.exists('/content/guppy'):\n"
-        "    shutil.rmtree('/content/guppy')\n"
-        "os.makedirs('/content/guppy')\n"
-        "os.chdir('/content/guppy')\n"
-        "print(f'Working dir: {os.getcwd()}')"
-    ))
-
-    # ── Download model ─────────────────────────────────────────────
-
-    cells.append(md(
-        "## 2. Download Model\n"
+        "if os.path.exists('/content/guppy'): shutil.rmtree('/content/guppy')\n"
+        "os.makedirs('/content/guppy'); os.chdir('/content/guppy')\n"
         "\n"
-        "Download everything from HuggingFace — weights, config, tokenizer, and inference code."
-    ))
-
-    cells.append(code(
         "from huggingface_hub import snapshot_download\n"
-        "\n"
-        "HF_REPO = 'arman-bd/guppylm-9M'\n"
-        "\n"
-        "snapshot_download(repo_id=HF_REPO, local_dir='.')\n"
-        "print(f'Downloaded {HF_REPO}')\n"
-        "\n"
-        "import os\n"
-        "for f in os.listdir('.'):\n"
-        "    if not f.startswith('.'):\n"
-        "        print(f'  {f}')"
-    ))
-
-    # ── Chat ───────────────────────────────────────────────────────
-
-    cells.append(md(
-        "## 3. Chat\n"
-        "\n"
-        "Talk to Guppy. Each message is independent (single-turn)."
+        "snapshot_download(repo_id='arman-bd/guppylm-9M', local_dir='.')\n"
+        "print('Model downloaded.')"
     ))
 
     cells.append(code(
+        "# Load model\n"
         "from inference import GuppyInference\n"
         "import torch\n"
         "\n"
-        "engine = GuppyInference(\n"
-        "    'pytorch_model.bin', 'tokenizer.json',\n"
-        "    device='cuda' if torch.cuda.is_available() else 'cpu'\n"
-        ")\n"
+        "engine = GuppyInference('pytorch_model.bin', 'tokenizer.json',\n"
+        "                        device='cuda' if torch.cuda.is_available() else 'cpu')\n"
         "\n"
         "def chat(prompt):\n"
-        "    r = engine.chat_completion([{'role': 'user', 'content': prompt}], max_tokens=64)\n"
-        "    return r['choices'][0]['message'].get('content', '').strip()"
+        "    return engine.chat_completion(\n"
+        "        [{'role': 'user', 'content': prompt}], max_tokens=64\n"
+        "    )['choices'][0]['message'].get('content', '').strip()\n"
+        "\n"
+        "# Quick test\n"
+        "for p in ['hi guppy', 'are you hungry', 'tell me a joke', 'what is the internet', 'goodnight guppy']:\n"
+        "    print(f'You> {p}\\nGuppy> {chat(p)}\\n')"
     ))
 
     cells.append(code(
-        "# Try different topics\n"
-        "tests = [\n"
-        "    'hi guppy',\n"
-        "    'are you hungry',\n"
-        "    'it is really hot today',\n"
-        "    'do you like bubbles',\n"
-        "    'what is the meaning of life',\n"
-        "    'tell me a joke',\n"
-        "    'the cat is looking at you',\n"
-        "    'do you love me',\n"
-        "    'what is the internet',\n"
-        "    'goodnight guppy',\n"
-        "]\n"
-        "\n"
-        "for prompt in tests:\n"
-        "    reply = chat(prompt)\n"
-        "    print(f'You> {prompt}')\n"
-        "    print(f'Guppy> {reply}')\n"
-        "    print()"
-    ))
-
-    cells.append(md(
-        "## 4. Interactive Chat\n"
-        "\n"
-        "Type your own messages. Type `quit` to stop."
-    ))
-
-    cells.append(code(
-        "print('Chat with Guppy (type quit to stop)')\n"
-        "print('=' * 40)\n"
+        "# Interactive chat — type your messages\n"
         "while True:\n"
         "    try:\n"
-        "        prompt = input('You> ').strip()\n"
+        "        p = input('You> ').strip()\n"
         "    except (KeyboardInterrupt, EOFError):\n"
         "        break\n"
-        "    if not prompt or prompt.lower() in ('quit', 'exit', 'q'):\n"
-        "        print('Guppy> bye. i will continue being a fish.')\n"
-        "        break\n"
-        "    reply = chat(prompt)\n"
-        "    print(f'Guppy> {reply}')\n"
-        "    print()"
+        "    if not p or p.lower() in ('quit', 'exit', 'q'):\n"
+        "        print('Guppy> bye. i will continue being a fish.'); break\n"
+        "    print(f'Guppy> {chat(p)}\\n')"
     ))
 
     return {
