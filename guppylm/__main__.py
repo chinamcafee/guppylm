@@ -25,20 +25,8 @@ def main():
         train()
 
     elif cmd == "chat":
-        from .inference import GuppyInference
-        engine = GuppyInference("checkpoints/best_model.pt", "data/tokenizer.json")
-        print("\nGuppy Chat (type 'quit' to exit)")
-        msgs = []
-        while True:
-            inp = input("\nYou> ").strip()
-            if inp.lower() in ("quit", "exit", "q"):
-                break
-            msgs.append({"role": "user", "content": inp})
-            r = engine.chat_completion(msgs)
-            msg = r["choices"][0]["message"]
-            if msg.get("content"):
-                print(f"Guppy> {msg['content']}")
-            msgs.append(msg)
+        from .inference import main
+        main()
 
     else:
         print(f"Unknown command: {cmd}")
