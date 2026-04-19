@@ -115,6 +115,17 @@ Downloads the pre-trained model from HuggingFace and lets you chat. Just run all
 2. **Run all cells** — downloads dataset, trains tokenizer, trains model, tests it
 3. Upload to HuggingFace or download locally
 
+### Rebuild the tested local Conda environment
+
+The project does not commit the local environment directory itself. For the tested Intel Mac setup, rebuild it from the lock file instead:
+
+```bash
+conda env create -p ./.conda-py311-mps -f environment.osx-64.lock.yml
+conda activate /absolute/path/to/guppylm/.conda-py311-mps
+```
+
+`environment.osx-64.lock.yml` is an `osx-64` lock file. It is meant for Intel Macs and is the closest way to recreate the same environment on another machine with the same platform.
+
 ### Chat locally
 
 ```bash

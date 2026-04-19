@@ -14,6 +14,8 @@ checkpoints/
 venv/
 env/
 .venv/
+/.conda-py311-mps/
+/.venv-mps-check/
 __pycache__/
 *.pyc
 *.pyo
@@ -53,3 +55,6 @@ Desktop.ini
 *.log
 *.tmp
 *.bak
+
+.VSCodeCounter/
+checkpoints-smoke-mps/
