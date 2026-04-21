@@ -233,8 +233,8 @@ LAZY_REASONS = [
 
 MAX_ROWS_PER_INPUT = 120
 
-MAX_OUTPUTS_PER_INPUT = 12
-MAX_PAIR_REPEATS = 4
+MAX_OUTPUTS_PER_INPUT = 6
+MAX_PAIR_REPEATS = 8
 CANDIDATE_TRIES = 8
 HARD_REJECT_TRIES = 24
 DEFAULT_SPLIT_MODE = "pair_stratified"
@@ -300,7 +300,17 @@ def pick_template(templates, **kwargs):
 
 
 def _expand_input_prompt(prompt):
-    return prompt
+    prompt = prompt.strip()
+    roll = random.random()
+
+    if roll < 0.5:
+        return prompt
+
+    variants = []
+    if not prompt.startswith(("小猫", "猫猫", "咪咪")):
+        variants.append(f"小猫，{prompt}")
+    variants.append(f"我想问你，{prompt}")
+    return pick(variants) if variants else prompt
 
 
 def _score_candidate(sample, input_counts, input_outputs, pair_counts):
