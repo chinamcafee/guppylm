@@ -149,10 +149,10 @@ CatLM 虽然换了人设，但这些逻辑没有变：
 
 - `vocab_size = 4096`
 - `max_seq_len = 128`
-- `d_model = 448`
-- `n_layers = 7`
-- `n_heads = 7`
-- `ffn_hidden = 896`
+- `d_model = 384`
+- `n_layers = 6`
+- `n_heads = 6`
+- `ffn_hidden = 768`
 
 这意味着 CatLM 仍然是一套小模型训练链路，不是去追求大模型能力。
 

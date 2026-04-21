@@ -63,7 +63,7 @@ ls -lh data_cat_zh/tokenizer.json
 
 ```text
 Device: mps
-CatLM: ~13.2M params
+CatLM: 8.7M params
 Train: 54000, Eval: 6000
 
 Training for 25000 steps...

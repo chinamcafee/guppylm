@@ -231,11 +231,7 @@ LAZY_REASONS = [
     "空气和温度都很适合趴着", "这会儿更适合观察而不是行动",
 ]
 
-LIGHT_PROMPT_VARIANTS = [
-    ("base", 0.7),
-    ("small_cat", 0.2),
-    ("cat_cat", 0.1),
-]
+MAX_ROWS_PER_INPUT = 120
 
 MAX_OUTPUTS_PER_INPUT = 12
 MAX_PAIR_REPEATS = 4
@@ -302,16 +298,6 @@ def pick_template(templates, **kwargs):
 
 
 def _expand_input_prompt(prompt):
-    mode = random.choices(
-        [name for name, _ in LIGHT_PROMPT_VARIANTS],
-        weights=[weight for _, weight in LIGHT_PROMPT_VARIANTS],
-        k=1,
-    )[0]
-
-    if mode == "small_cat":
-        return f"小猫，{prompt}"
-    if mode == "cat_cat":
-        return f"猫猫，{prompt}"
     return prompt
 
 
@@ -327,7 +313,7 @@ def _score_candidate(sample, input_counts, input_outputs, pair_counts):
     if input_freq == 0:
         score += 120.0
     else:
-        score -= input_freq * 0.15
+        score -= input_freq * 0.45
 
     if out not in seen_outputs:
         if len(seen_outputs) < MAX_OUTPUTS_PER_INPUT:
@@ -2700,6 +2686,8 @@ def generate_dataset(n_samples=60000, eval_ratio=0.1, data_dir="data_cat_zh"):
                     pair_freq = pair_counts[(inp, out)]
 
                     if pair_freq >= MAX_PAIR_REPEATS:
+                        continue
+                    if input_counts[inp] >= MAX_ROWS_PER_INPUT:
                         continue
                     if out not in seen_outputs and len(seen_outputs) >= MAX_OUTPUTS_PER_INPUT:
                         continue

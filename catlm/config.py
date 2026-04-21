@@ -7,10 +7,10 @@ from dataclasses import dataclass
 class CatConfig:
     vocab_size: int = 4096
     max_seq_len: int = 128
-    d_model: int = 448
-    n_layers: int = 7
-    n_heads: int = 7
-    ffn_hidden: int = 896
+    d_model: int = 384
+    n_layers: int = 6
+    n_heads: int = 6
+    ffn_hidden: int = 768
     dropout: float = 0.1
 
     # Special tokens
