@@ -40,13 +40,19 @@ def train_tokenizer(texts, save_path, vocab_size=VOCAB_SIZE):
     return tokenizer
 
 
-def prepare(data_dir=DATA_DIR, n_samples=60000, eval_ratio=0.1):
+def prepare(data_dir=DATA_DIR, n_samples=60000, eval_ratio=0.1, split_mode=None):
     os.makedirs(data_dir, exist_ok=True)
 
     # 1. Generate data
     print(f"Generating {n_samples} samples...")
-    from .generate_data import generate_dataset
-    generate_dataset(n_samples=n_samples, eval_ratio=eval_ratio, data_dir=data_dir)
+    from .generate_data import DEFAULT_SPLIT_MODE, generate_dataset
+    split_mode = split_mode or DEFAULT_SPLIT_MODE
+    generate_dataset(
+        n_samples=n_samples,
+        eval_ratio=eval_ratio,
+        data_dir=data_dir,
+        split_mode=split_mode,
+    )
 
     # 2. Read back all samples for tokenizer training
     texts = []

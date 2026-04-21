@@ -237,6 +237,8 @@ MAX_OUTPUTS_PER_INPUT = 12
 MAX_PAIR_REPEATS = 4
 CANDIDATE_TRIES = 8
 HARD_REJECT_TRIES = 24
+DEFAULT_SPLIT_MODE = "pair_stratified"
+VALID_SPLIT_MODES = {"pair_stratified", "input_stratified"}
 
 
 def _make_sample(user_msg, cat_msg, category):
@@ -341,52 +343,53 @@ def _pick_best_sample(gen, input_counts, input_outputs, pair_counts):
     return best_sample
 
 
-def _split_samples_by_input_stratified(samples, eval_ratio):
+def _split_samples_by_group_stratified(samples, eval_ratio, group_key_fn):
     target_eval_total = int(len(samples) * eval_ratio)
 
-    by_input = defaultdict(list)
-    category_inputs = defaultdict(set)
+    by_group = defaultdict(list)
+    category_groups = defaultdict(set)
     for sample in samples:
-        by_input[sample["input"]].append(sample)
-        category_inputs[sample["category"]].add(sample["input"])
+        group_key = group_key_fn(sample)
+        by_group[group_key].append(sample)
+        category_groups[sample["category"]].add(group_key)
 
-    target_eval_inputs_per_category = {
-        category: max(1, round(len(inputs) * eval_ratio))
-        for category, inputs in category_inputs.items()
+    target_eval_groups_per_category = {
+        category: max(1, round(len(groups) * eval_ratio))
+        for category, groups in category_groups.items()
     }
 
-    input_categories = {
-        input_text: {sample["category"] for sample in group}
-        for input_text, group in by_input.items()
+    group_categories = {
+        group_key: {sample["category"] for sample in group}
+        for group_key, group in by_group.items()
     }
 
-    remaining_inputs = list(by_input.keys())
-    random.shuffle(remaining_inputs)
-    eval_inputs = set()
+    remaining_groups = list(by_group.keys())
+    random.shuffle(remaining_groups)
+    eval_groups = set()
     eval_rows = 0
-    eval_input_counts_by_category = Counter()
+    eval_group_counts_by_category = Counter()
 
-    # Stage 1: satisfy per-category distinct-input quotas using inputs that
+    # Stage 1: satisfy per-category distinct-group quotas using groups that
     # help unmet categories while preferring smaller groups.
-    while remaining_inputs:
+    while remaining_groups:
         unmet_categories = {
             category
-            for category, target in target_eval_inputs_per_category.items()
-            if eval_input_counts_by_category[category] < target
+            for category, target in target_eval_groups_per_category.items()
+            if eval_group_counts_by_category[category] < target
         }
         if not unmet_categories:
             break
 
-        best_input = None
+        best_group = None
         best_score = None
 
-        for input_text in remaining_inputs:
-            cats = input_categories[input_text]
+        for group_key in remaining_groups:
+            cats = group_categories[group_key]
             helpful = [cat for cat in cats if cat in unmet_categories]
             if not helpful:
                 continue
 
-            group_size = len(by_input[input_text])
+            group_size = len(by_group[group_key])
             overshoot = max(0, eval_rows + group_size - target_eval_total)
             score = len(helpful) * 1000.0
             score -= group_size * 1.5
@@ -394,32 +397,54 @@ def _split_samples_by_input_stratified(samples, eval_ratio):
 
             if best_score is None or score > best_score:
                 best_score = score
-                best_input = input_text
+                best_group = group_key
 
-        if best_input is None:
+        if best_group is None:
             break
 
-        eval_inputs.add(best_input)
-        eval_rows += len(by_input[best_input])
-        for category in input_categories[best_input]:
-            eval_input_counts_by_category[category] += 1
-        remaining_inputs.remove(best_input)
+        eval_groups.add(best_group)
+        eval_rows += len(by_group[best_group])
+        for category in group_categories[best_group]:
+            eval_group_counts_by_category[category] += 1
+        remaining_groups.remove(best_group)
 
-    # Stage 2: fill the remaining eval row budget with the smallest input
-    # groups first so eval covers more distinct prompts.
-    remaining_inputs.sort(key=lambda input_text: len(by_input[input_text]))
-    for input_text in remaining_inputs:
+    # Stage 2: fill the remaining eval row budget with the smallest groups
+    # first so eval covers more distinct examples.
+    remaining_groups.sort(key=lambda group_key: len(by_group[group_key]))
+    for group_key in remaining_groups:
         if eval_rows >= target_eval_total:
             break
-        eval_inputs.add(input_text)
-        eval_rows += len(by_input[input_text])
+        eval_groups.add(group_key)
+        eval_rows += len(by_group[group_key])
 
-    eval_samples = [sample for input_text in eval_inputs for sample in by_input[input_text]]
-    train_samples = [sample for sample in samples if sample["input"] not in eval_inputs]
+    eval_samples = [sample for group_key in eval_groups for sample in by_group[group_key]]
+    train_samples = [sample for group_key, group in by_group.items() if group_key not in eval_groups for sample in group]
 
     random.shuffle(eval_samples)
     random.shuffle(train_samples)
     return eval_samples, train_samples
+
+
+def _split_samples_by_input_stratified(samples, eval_ratio):
+    return _split_samples_by_group_stratified(samples, eval_ratio, lambda sample: sample["input"])
+
+
+def _split_samples_by_pair_stratified(samples, eval_ratio):
+    return _split_samples_by_group_stratified(
+        samples,
+        eval_ratio,
+        lambda sample: (sample["input"], sample["output"]),
+    )
+
+
+def _split_samples(samples, eval_ratio, split_mode):
+    if split_mode == "pair_stratified":
+        return _split_samples_by_pair_stratified(samples, eval_ratio)
+    if split_mode == "input_stratified":
+        return _split_samples_by_input_stratified(samples, eval_ratio)
+    raise ValueError(
+        f"Unknown split_mode={split_mode!r}. Expected one of {sorted(VALID_SPLIT_MODES)}."
+    )
 
 
 gen_greeting = _topic(
@@ -2677,7 +2702,12 @@ def to_openai(sample):
     }
 
 
-def generate_dataset(n_samples=60000, eval_ratio=0.1, data_dir="data_cat_zh"):
+def generate_dataset(
+    n_samples=60000,
+    eval_ratio=0.1,
+    data_dir="data_cat_zh",
+    split_mode=DEFAULT_SPLIT_MODE,
+):
     w = 1.0 / len(TOPICS)
     generators = [(g, w) for g in TOPICS]
 
@@ -2723,7 +2753,7 @@ def generate_dataset(n_samples=60000, eval_ratio=0.1, data_dir="data_cat_zh"):
                 print(f"Error in {gen.__name__}: {exc}")
 
     random.shuffle(samples)
-    eval_samples, train_samples = _split_samples_by_input_stratified(samples, eval_ratio)
+    eval_samples, train_samples = _split_samples(samples, eval_ratio, split_mode)
     n_eval = len(eval_samples)
 
     os.makedirs(data_dir, exist_ok=True)
@@ -2762,6 +2792,9 @@ def generate_dataset(n_samples=60000, eval_ratio=0.1, data_dir="data_cat_zh"):
     train_inputs = {sample["input"] for sample in train_samples}
     eval_inputs = {sample["input"] for sample in eval_samples}
     input_overlap = len(train_inputs & eval_inputs)
+    train_pairs = {(sample["input"], sample["output"]) for sample in train_samples}
+    eval_pairs = {(sample["input"], sample["output"]) for sample in eval_samples}
+    pair_overlap = len(train_pairs & eval_pairs)
     train_categories = Counter(sample["category"] for sample in train_samples)
     eval_categories = Counter(sample["category"] for sample in eval_samples)
 
@@ -2770,10 +2803,12 @@ def generate_dataset(n_samples=60000, eval_ratio=0.1, data_dir="data_cat_zh"):
         f"({unique_outputs} unique outputs, {unique_outputs / len(samples) * 100:.1f}% unique):"
     )
     print(f"  Train: {len(train_samples)}, Eval: {n_eval}")
+    print(f"  Split mode: {split_mode}")
     print(f"  Raw logical samples: {os.path.join(data_dir, 'samples_raw.jsonl')}")
     print(f"  Distinct inputs: {unique_inputs}")
     print(f"  Avg outputs per input: {outputs_per_input:.2f}")
     print(f"  Train inputs: {len(train_inputs)}, Eval inputs: {len(eval_inputs)}, Input overlap: {input_overlap}")
+    print(f"  Train pairs: {len(train_pairs)}, Eval pairs: {len(eval_pairs)}, Pair overlap: {pair_overlap}")
     print(f"  Train categories: {len(train_categories)}, Eval categories: {len(eval_categories)}")
     print("\nBy category:")
     for cat, count in sorted(cats.items(), key=lambda x: (-x[1], x[0])):
