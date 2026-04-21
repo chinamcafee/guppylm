@@ -233,8 +233,8 @@ LAZY_REASONS = [
 
 MAX_ROWS_PER_INPUT = 120
 
-MAX_OUTPUTS_PER_INPUT = 6
-MAX_PAIR_REPEATS = 8
+MAX_OUTPUTS_PER_INPUT = 12
+MAX_PAIR_REPEATS = 4
 CANDIDATE_TRIES = 8
 HARD_REJECT_TRIES = 24
 DEFAULT_SPLIT_MODE = "pair_stratified"
@@ -300,17 +300,7 @@ def pick_template(templates, **kwargs):
 
 
 def _expand_input_prompt(prompt):
-    prompt = prompt.strip()
-    roll = random.random()
-
-    if roll < 0.5:
-        return prompt
-
-    variants = []
-    if not prompt.startswith(("小猫", "猫猫", "咪咪")):
-        variants.append(f"小猫，{prompt}")
-    variants.append(f"我想问你，{prompt}")
-    return pick(variants) if variants else prompt
+    return prompt.strip()
 
 
 def _score_candidate(sample, input_counts, input_outputs, pair_counts):
@@ -351,6 +341,43 @@ def _pick_best_sample(gen, input_counts, input_outputs, pair_counts):
             best_score = score
 
     return best_sample
+
+
+def _candidate_violations(sample, input_counts, input_outputs, pair_counts):
+    inp = sample["input"]
+    out = sample["output"]
+    seen_outputs = input_outputs[inp]
+
+    pair_over = max(0, pair_counts[(inp, out)] - MAX_PAIR_REPEATS + 1)
+    rows_over = max(0, input_counts[inp] - MAX_ROWS_PER_INPUT + 1)
+    new_output_over = 0
+    if out not in seen_outputs:
+        new_output_over = max(0, len(seen_outputs) - MAX_OUTPUTS_PER_INPUT + 1)
+
+    return pair_over, rows_over, new_output_over
+
+
+def _accept_candidate(sample, input_counts, input_outputs, pair_counts):
+    return all(
+        violation == 0
+        for violation in _candidate_violations(sample, input_counts, input_outputs, pair_counts)
+    )
+
+
+def _fallback_key(sample, input_counts, input_outputs, pair_counts):
+    pair_over, rows_over, new_output_over = _candidate_violations(
+        sample, input_counts, input_outputs, pair_counts
+    )
+    score = _score_candidate(sample, input_counts, input_outputs, pair_counts)
+    return (
+        pair_over > 0,
+        pair_over,
+        new_output_over > 0,
+        new_output_over,
+        rows_over > 0,
+        rows_over,
+        -score,
+    )
 
 
 def _split_samples_by_group_stratified(samples, eval_ratio, group_key_fn):
@@ -2737,22 +2764,17 @@ def generate_dataset(
             try:
                 chosen = None
                 fallback = None
+                fallback_key = None
                 for _attempt in range(HARD_REJECT_TRIES):
                     candidate = _pick_best_sample(gen, input_counts, input_outputs, pair_counts)
-                    fallback = candidate
-                    inp = candidate["input"]
-                    out = candidate["output"]
-                    seen_outputs = input_outputs[inp]
-                    pair_freq = pair_counts[(inp, out)]
+                    candidate_key = _fallback_key(candidate, input_counts, input_outputs, pair_counts)
+                    if fallback_key is None or candidate_key < fallback_key:
+                        fallback = candidate
+                        fallback_key = candidate_key
 
-                    if pair_freq >= MAX_PAIR_REPEATS:
-                        continue
-                    if input_counts[inp] >= MAX_ROWS_PER_INPUT:
-                        continue
-                    if out not in seen_outputs and len(seen_outputs) >= MAX_OUTPUTS_PER_INPUT:
-                        continue
-                    chosen = candidate
-                    break
+                    if _accept_candidate(candidate, input_counts, input_outputs, pair_counts):
+                        chosen = candidate
+                        break
 
                 sample = chosen or fallback
                 samples.append(sample)
