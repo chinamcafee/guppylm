@@ -345,56 +345,76 @@ def _split_samples_by_input_stratified(samples, eval_ratio):
     target_eval_total = int(len(samples) * eval_ratio)
 
     by_input = defaultdict(list)
-    category_totals = Counter()
+    category_inputs = defaultdict(set)
     for sample in samples:
         by_input[sample["input"]].append(sample)
-        category_totals[sample["category"]] += 1
+        category_inputs[sample["category"]].add(sample["input"])
 
-    target_eval_per_category = {
-        category: int(count * eval_ratio)
-        for category, count in category_totals.items()
+    target_eval_inputs_per_category = {
+        category: max(1, round(len(inputs) * eval_ratio))
+        for category, inputs in category_inputs.items()
     }
 
-    eval_category_counts = Counter()
-    remaining_groups = list(by_input.items())
-    random.shuffle(remaining_groups)
-    eval_groups = []
-    eval_total = 0
+    input_categories = {
+        input_text: {sample["category"] for sample in group}
+        for input_text, group in by_input.items()
+    }
 
-    while remaining_groups and eval_total < target_eval_total:
-        best_idx = None
+    remaining_inputs = list(by_input.keys())
+    random.shuffle(remaining_inputs)
+    eval_inputs = set()
+    eval_rows = 0
+    eval_input_counts_by_category = Counter()
+
+    # Stage 1: satisfy per-category distinct-input quotas using inputs that
+    # help unmet categories while preferring smaller groups.
+    while remaining_inputs:
+        unmet_categories = {
+            category
+            for category, target in target_eval_inputs_per_category.items()
+            if eval_input_counts_by_category[category] < target
+        }
+        if not unmet_categories:
+            break
+
+        best_input = None
         best_score = None
 
-        for idx, (_input, group) in enumerate(remaining_groups):
-            group_size = len(group)
-            group_category_counts = Counter(sample["category"] for sample in group)
+        for input_text in remaining_inputs:
+            cats = input_categories[input_text]
+            helpful = [cat for cat in cats if cat in unmet_categories]
+            if not helpful:
+                continue
 
-            score = 0.0
-            for category, count in group_category_counts.items():
-                unmet = max(0, target_eval_per_category[category] - eval_category_counts[category])
-                score += min(unmet, count) * 10.0
-                if unmet > 0:
-                    score += 1.0
-
-            overshoot = max(0, eval_total + group_size - target_eval_total)
-            score -= overshoot * 0.2
-            score -= group_size * 0.01
+            group_size = len(by_input[input_text])
+            overshoot = max(0, eval_rows + group_size - target_eval_total)
+            score = len(helpful) * 1000.0
+            score -= group_size * 1.5
+            score -= overshoot * 4.0
 
             if best_score is None or score > best_score:
                 best_score = score
-                best_idx = idx
+                best_input = input_text
 
-        if best_idx is None:
+        if best_input is None:
             break
 
-        _input, chosen_group = remaining_groups.pop(best_idx)
-        eval_groups.append(chosen_group)
-        eval_total += len(chosen_group)
-        for sample in chosen_group:
-            eval_category_counts[sample["category"]] += 1
+        eval_inputs.add(best_input)
+        eval_rows += len(by_input[best_input])
+        for category in input_categories[best_input]:
+            eval_input_counts_by_category[category] += 1
+        remaining_inputs.remove(best_input)
 
-    eval_samples = [sample for group in eval_groups for sample in group]
-    eval_inputs = {sample["input"] for sample in eval_samples}
+    # Stage 2: fill the remaining eval row budget with the smallest input
+    # groups first so eval covers more distinct prompts.
+    remaining_inputs.sort(key=lambda input_text: len(by_input[input_text]))
+    for input_text in remaining_inputs:
+        if eval_rows >= target_eval_total:
+            break
+        eval_inputs.add(input_text)
+        eval_rows += len(by_input[input_text])
+
+    eval_samples = [sample for input_text in eval_inputs for sample in by_input[input_text]]
     train_samples = [sample for sample in samples if sample["input"] not in eval_inputs]
 
     random.shuffle(eval_samples)

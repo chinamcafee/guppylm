@@ -139,13 +139,15 @@ python -m catlm prepare
 现在的实现是：
 
 - 先在全局范围内按 `input` 分组
-- 再根据每个 `category` 目标验证样本数，贪心挑选一批 `input` 组进入 `eval`
+- 先根据每个 `category` 的目标验证 `distinct input` 数，贪心挑选一批 `input` 组进入 `eval`
+- 再优先用更小的 `input` 组去补齐 `eval` 的总行数预算
 - 剩余的 `input` 组全部进入 `train`
 
 这意味着：
 
 - 同一个 `input` 不会跨 `train/eval`
 - 同时 `eval` 也不会只集中在极少数类别里
+- 同时 `eval` 会尽量覆盖更多不同的 prompt，而不是被少数大组输入塞满
 - 验证集不会再因为和训练集共享大量相同 prompt 而严重泄漏
 
 这一步会让：
