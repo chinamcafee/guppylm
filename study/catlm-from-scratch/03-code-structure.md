@@ -68,6 +68,7 @@ catlm/
 - 编码 `text`
 - 截断到 `max_len`
 - 生成 `(x, y)` 训练对
+- 只对 `assistant` 回复部分保留监督信号，`user` prompt 部分会在 loss 中被 mask 掉
 
 ### 2.6 模型
 

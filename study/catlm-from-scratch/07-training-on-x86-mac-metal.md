@@ -79,6 +79,8 @@ Training for 25000 steps...
 - 每 `save_interval` 保存一次中间 checkpoint
 - 如果验证 loss 更好，会更新 `best_model.pt`
 
+当前 CatLM 的训练 loss / eval loss 只统计 `assistant` 回复部分，不把前面的 `user` prompt 一起算进损失。
+
 ## 6. 训练完成后会有哪些文件
 
 ```bash
