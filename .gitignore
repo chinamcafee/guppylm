@@ -58,3 +58,6 @@ Desktop.ini
 
 .VSCodeCounter/
 checkpoints-smoke-mps/
+checkpoints_catlm/
+data_cat_zh/
+
