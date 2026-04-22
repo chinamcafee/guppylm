@@ -32,11 +32,11 @@ def get_lr(step, config):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, max_batches=50):
+def evaluate(model, loader, device, max_batches=None):
     model.eval()
     total_loss, n = 0, 0
     for x, y in loader:
-        if n >= max_batches:
+        if max_batches is not None and n >= max_batches:
             break
         x, y = x.to(device), y.to(device)
         _, loss = model(x, y)
@@ -154,6 +154,8 @@ def _run_training(
     step = start_step
     losses = list(losses or [])
     t0 = time.time()
+    no_improve_evals = 0
+    stop_requested = False
 
     print(f"\nTraining for {tc.max_steps} steps...")
     print(f"{'Step':>6} | {'LR':>10} | {'Train':>10} | {'Eval':>10} | {'Time':>8}")
@@ -192,13 +194,14 @@ def _run_training(
                 print(f"{step:6d} | {lr:10.6f} | {avg:10.4f} | {'--':>10} | {elapsed:7.1f}s")
 
             if step > 0 and step % tc.eval_interval == 0:
-                el = evaluate(model, eval_loader, device)
+                el = evaluate(model, eval_loader, device, max_batches=tc.eval_max_batches)
                 avg_train = sum(losses[-tc.eval_interval:]) / min(len(losses), tc.eval_interval)
                 elapsed = time.time() - t0
                 print(f"{step:6d} | {lr:10.6f} | {avg_train:10.4f} | {el:10.4f} | {elapsed:7.1f}s")
 
-                if el < best_eval:
+                if el < best_eval - tc.early_stop_min_delta:
                     best_eval = el
+                    no_improve_evals = 0
                     _save_training_checkpoint(
                         os.path.join(tc.output_dir, "best_model.pt"),
                         step=step,
@@ -212,6 +215,17 @@ def _run_training(
                         device=device,
                     )
                     print(f"  -> Best model (eval={el:.4f})")
+                else:
+                    no_improve_evals += 1
+
+                if tc.early_stop_patience is not None and no_improve_evals >= tc.early_stop_patience:
+                    print(
+                        f"Early stopping at step {step}: "
+                        f"no eval improvement > {tc.early_stop_min_delta:g} "
+                        f"for {no_improve_evals} evals."
+                    )
+                    stop_requested = True
+                    break
 
             if step > 0 and step % tc.save_interval == 0:
                 _save_training_checkpoint(
@@ -228,6 +242,9 @@ def _run_training(
                 )
 
             step += 1
+
+        if stop_requested:
+            break
 
     _save_training_checkpoint(
         os.path.join(tc.output_dir, "final_model.pt"),

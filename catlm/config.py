@@ -1,6 +1,7 @@
 """CatLM configuration."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -28,7 +29,10 @@ class TrainConfig:
     warmup_steps: int = 200
     max_steps: int = 12000
     eval_interval: int = 200
+    eval_max_batches: Optional[int] = None
     save_interval: int = 500
+    early_stop_patience: Optional[int] = 12
+    early_stop_min_delta: float = 1e-3
     grad_clip: float = 1.0
     device: str = "auto"
     seed: int = 42
